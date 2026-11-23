@@ -14,6 +14,61 @@ export const SPECS = {
   cpu: { accelerator: 'NONE', shape: 'SHAPE_STANDARD', variant: 'VARIANT_CPU' },
 };
 
+export const AUTO_SPEC_ORDER = ['gpu_a100', 'gpu_l4', 'gpu_t4_highmem', 'gpu_t4'];
+
+export function isTransientOrTimeoutError(msg) {
+  return /timeout|timed out|deadline|504|ETIMEDOUT|terminated|fetch failed|UND_ERR|socket|closed|ECONNRESET/i.test(
+    String(msg || '')
+  );
+}
+
+export function parseEligibleSpecs(specsRes) {
+  let obj = specsRes?.structured;
+  if (!obj && specsRes?.text) {
+    try {
+      obj = JSON.parse(specsRes.text);
+    } catch {
+      const m = specsRes.text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          obj = JSON.parse(m[0]);
+        } catch {}
+      }
+    }
+  }
+  const rawList = obj?.runtimeSpecs || obj?.eligibleRuntimeSpecs || obj?.specs || (Array.isArray(obj) ? obj : null);
+  if (!Array.isArray(rawList) || rawList.length === 0) return ['gpu_t4'];
+
+  const eligible = [];
+  for (const key of AUTO_SPEC_ORDER) {
+    const target = SPECS[key];
+    if (!target) continue;
+    const hit = rawList.find((item) => {
+      const rs = item?.runtimeSpec || item?.key || item;
+      if (item?.eligible !== true) return false;
+      return (
+        String(rs?.accelerator || '').toUpperCase() === target.accelerator &&
+        String(rs?.shape || '').toUpperCase() === target.shape &&
+        String(rs?.variant || '').toUpperCase() === target.variant
+      );
+    });
+    if (hit) eligible.push(key);
+  }
+  return eligible.length > 0 ? eligible : ['gpu_t4'];
+}
+
+export async function interruptibleSleep(ms, shouldWakeEarly) {
+  const stepMs = 5000;
+  let waited = 0;
+  while (waited < ms) {
+    if (shouldWakeEarly && shouldWakeEarly()) return false;
+    const d = Math.min(stepMs, ms - waited);
+    await new Promise((r) => setTimeout(r, d));
+    waited += d;
+  }
+  return true;
+}
+
 export function findGcloud(preferred) {
   const candidates = [
     preferred,
