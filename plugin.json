@@ -1,0 +1,16 @@
+{
+  "name": "colab",
+  "displayName": "Colab 云端算力（GPU）",
+  "version": "0.2.0",
+  "description": "把 Google 官方 Colab MCP 接进 Antigravity，支持多账号并行调度、二进制上传/下载、Blender Cycles 断点续跑渲染与自动本地打包。支持「启用云算力」「启用云算力渲染」等泛化语言自动触发。",
+  "logo": "assets/logo.svg",
+  "homepage": "https://github.com/holoiallo/agy-colab-plugin",
+  "repository": "https://github.com/holoiallo/agy-colab-plugin",
+  "suggestedPrompts": [
+    "启用云算力渲染，检查全部节点状态并测试 T4 可用性",
+    "启用云算力，用多号并行跑 Blender 渲染任务",
+    "检查所有 Colab 节点是否有残留 runtime 并清理"
+  ],
+  "author": { "name": "holoiallo" },
+  "license": "MIT"
+}

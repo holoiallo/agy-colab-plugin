@@ -1,0 +1,118 @@
+# %% [markdown]
+# # 30 · 旁白（edge-tts：不占显存、秒出、带逐词时间轴）
+# 为什么要它：GPU 那点时间应该留给视频/音乐；中文旁白用云端 TTS 质量已经够用，
+# 而且它返回 **每个词的起止时间**，直接能生成字幕 SRT —— 做视频这步最省事。
+# 想要「克隆你自己音色」，见文件末尾的 F5-TTS / CosyVoice 装法。
+
+# %%
+import subprocess, os, json, asyncio, time
+from pathlib import Path
+
+def sh(cmd, check=True):
+    print(f"$ {cmd}")
+    p = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if p.stdout: print(p.stdout.strip()[-1500:])
+    if p.returncode != 0 and check:
+        print(p.stderr.strip()[-1200:]); raise RuntimeError(cmd)
+    return p
+
+sh("pip -q install -U edge-tts")
+
+import edge_tts
+
+OUT = Path(os.environ.get("CK_OUT", "/content/colabkit/outputs/voice"))
+OUT.mkdir(parents=True, exist_ok=True)
+
+VOICES = {
+    "晓晓·女声·通用": "zh-CN-XiaoxiaoNeural",
+    "云希·男声·年轻": "zh-CN-YunxiNeural",
+    "云健·男声·解说": "zh-CN-YunjianNeural",
+    "晓伊·女声·活泼": "zh-CN-XiaoyiNeural",
+    "小北·东北女声": "zh-CN-liaoning-XiaobeiNeural",
+    "英文·Ava": "en-US-AvaMultilingualNeural",
+}
+
+# %%
+def _ts(sec, sep=","):
+    h = int(sec // 3600); m = int(sec % 3600 // 60); s = sec % 60
+    return f"{h:02d}:{m:02d}:{int(s):02d}{sep}{int(round((s - int(s)) * 1000)):03d}"
+
+async def _synth(text, voice, mp3, rate, pitch, volume):
+    comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
+    cues = []
+    with open(mp3, "wb") as f:
+        async for chunk in comm.stream():
+            if chunk["type"] == "audio":
+                f.write(chunk["data"])
+            elif chunk["type"] == "WordBoundary":
+                cues.append({"text": chunk["text"],
+                             "start": chunk["offset"] / 1e7,
+                             "end": (chunk["offset"] + chunk["duration"]) / 1e7})
+    return cues
+
+def tts(text, voice="zh-CN-XiaoxiaoNeural", name=None, rate="+0%", pitch="+0Hz", volume="+0%", chunk_chars=120):
+    """长文本自动切片合成后拼接（edge-tts 单次太长会断），并合并时间轴。"""
+    stem = name or f"voice_{int(time.time())}"
+    mp3 = OUT / f"{stem}.mp3"
+    all_cues, offset = [], 0.0
+    parts = [text[i:i + chunk_chars] for i in range(0, len(text), chunk_chars)] or [""]
+    files = []
+    for i, part in enumerate(parts):
+        seg = OUT / f".{stem}.part{i:03d}.mp3"
+        cues = asyncio.run(_synth(part, voice, str(seg), rate, pitch, volume))
+        dur = max([c["end"] for c in cues], default=0.0)
+        for c in cues:
+            all_cues.append({"text": c["text"], "start": c["start"] + offset, "end": c["end"] + offset})
+        offset += dur
+        files.append(seg)
+
+    # 拼接
+    lst = OUT / f".{stem}.txt"
+    lst.write_text("\n".join(f"file '{f.as_posix()}'" for f in files), encoding="utf-8")
+    sh(f'ffmpeg -y -loglevel error -f concat -safe 0 -i "{lst}" -c copy "{mp3}"')
+    for f in files:
+        f.unlink(missing_ok=True)
+    lst.unlink(missing_ok=True)
+
+    # 字幕（每 12 个字并成一条，读起来才不碎）
+    srt = OUT / f"{stem}.srt"
+    lines, idx, buf = [], 1, []
+    for c in all_cues:
+        buf.append(c)
+        if sum(len(x["text"]) for x in buf) >= 12 or c is all_cues[-1]:
+            s, e = buf[0]["start"], buf[-1]["end"]
+            lines += [f"{idx}", f"{_ts(s)} --> {_ts(e)}", "".join(x["text"] for x in buf), ""]
+            idx += 1
+            buf = []
+
+    srt.write_text("\n".join(lines), encoding="utf-8")
+    dur = all_cues[-1]["end"] if all_cues else 0
+    row = {"file": str(mp3), "srt": str(srt), "voice": voice, "chars": len(text),
+           "duration_s": round(dur, 2), "size_mb": round(mp3.stat().st_size / 1024**2, 2)}
+    print(json.dumps(row, ensure_ascii=False))
+    return row
+
+# %%
+rows = []
+rows.append(tts(
+    "想象一下，你站在一台自动贩卖机前面。投币，按下按钮，咚的一声，可乐滚出来。"
+    "很长一段时间里，我们获取信息的方式，就跟这台售货机一模一样。",
+    voice=VOICES["晓晓·女声·通用"], name="vending", rate="+6%",
+))
+
+(OUT / "manifest.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+print(f"\n✅ {OUT}")
+
+# %% [markdown]
+# ## 要克隆音色（你自己的声音）
+# **F5-TTS**（中文效果好，T4 可跑）：
+# ```bash
+# !pip -q install f5-tts
+# !f5-tts_infer-cli --model F5TTS_v1_Base \
+#   --ref_audio /content/drive/MyDrive/colabkit/ref_my_voice.wav \
+#   --ref_text "参考音频里说的那句话" \
+#   --gen_text "要合成的新台词" \
+#   --output_dir /content/colabkit/outputs/voice
+# ```
+# **CosyVoice2**（更接近真人、支持方言，稍重）：官方仓库 FunAudioLLM/CosyVoice，需 `pip install -r requirements.txt`。
+# 两者都要 3–10 秒干净人声做参考（无背景音乐、无混响）。

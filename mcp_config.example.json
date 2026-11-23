@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "colab": {
+      "command": "<NODE_EXE_PATH>",
+      "args": [
+        "<PLUGIN_TOOLS_DIR>/colab-mcp-server.mjs"
+      ],
+      "env": {
+        "COLAB_PROJECT": "<YOUR_GCP_PROJECT_ID>",
+        "GCLOUD_CMD": "<GCLOUD_CMD_PATH>"
+      }
+    },
+    "colab_pro2": {
+      "command": "<NODE_EXE_PATH>",
+      "args": [
+        "<PLUGIN_TOOLS_DIR>/colab-mcp-server.mjs"
+      ],
+      "env": {
+        "COLAB_PROJECT": "<YOUR_GCP_PROJECT_ID>",
+        "CLOUDSDK_CONFIG": "<USER_HOME>/.gcloud-pro2",
+        "COLAB_STATE_DIR": "<USER_HOME>/.gcloud-pro2/.colabkit-mcp",
+        "GCLOUD_CMD": "<GCLOUD_CMD_PATH>"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+.project
+.colabkit-mcp/
+.gcloud-*/
+mcp_config.json
+out*/
+chunks/
+frames/
+*.local.*
+*.log
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
